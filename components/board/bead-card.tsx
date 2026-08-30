@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { DragOverlay, defaultDropAnimation } from "@dnd-kit/core";
 import type { Bead } from "@/lib/schema";
 import { Icon, typeIconName } from "@/components/icons";
 import { useApp } from "@/components/app-context";
@@ -19,41 +19,87 @@ import {
   isBlocked,
   parentOf,
   checklistProgress,
-  epicProgress,
   type ChildProgress,
 } from "@/lib/beads-view";
 
 export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: number }) {
-  const { beads, index, humanAllowlist, openDetail } = useApp();
-  const childProgress = React.useMemo(() => epicProgress(bead.id, beads), [bead.id, beads]);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { index, humanAllowlist, openDetail } = useApp();
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({
     id: bead.id,
   });
 
   const o = beadOrigin(bead, humanAllowlist);
   const parent = parentOf(bead, index);
   const blocked = isBlocked(bead, index);
+
+  return (
+    <>
+      <article
+        ref={setNodeRef}
+        data-board-bead={bead.id}
+        {...listeners}
+        {...attributes}
+        onClick={() => openDetail(bead.id)}
+        style={{
+          // No transform while dragging: the moving preview is the DragOverlay
+          // (see board.tsx). Applying dnd-kit's transform here computed in a
+          // distorted frame on Wayland + fractional scaling (bead cmb), leaving
+          // the card visually stuck in its source lane until release.
+          opacity: isDragging ? 0.4 : 1,
+          boxShadow: "var(--shadow)",
+          zIndex: isDragging ? 10 : undefined,
+        }}
+        className="flex cursor-pointer touch-none flex-col gap-[9px] rounded-[11px] border border-border bg-[var(--surface)] p-[12px_13px] transition-[border-color,box-shadow] hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-lg)]"
+      >
+        <BeadCardContent
+          bead={bead}
+          childCount={childCount}
+          origin={o}
+          parent={parent}
+          blocked={blocked}
+        />
+      </article>
+      {isDragging && (
+        <DragOverlay dropAnimation={defaultDropAnimation}>
+          <div
+            className="flex w-full cursor-grabbing flex-col gap-[9px] rounded-[11px] border border-[var(--border-strong)] bg-[var(--surface)] p-[12px_13px]"
+            style={{ boxShadow: "var(--shadow-lg)" }}
+          >
+            <BeadCardContent
+              bead={bead}
+              childCount={childCount}
+              origin={o}
+              parent={parent}
+              blocked={blocked}
+            />
+          </div>
+        </DragOverlay>
+      )}
+    </>
+  );
+}
+
+/** Everything inside a board card, shared by the sortable card and the drag overlay. */
+function BeadCardContent({
+  bead,
+  childCount,
+  origin,
+  parent,
+  blocked,
+}: {
+  bead: Bead;
+  childCount: number;
+  origin: "human" | "agent";
+  parent: Bead | null;
+  blocked: boolean;
+}) {
   const visLabels = (bead.labels ?? []).filter((l) => l !== "archived").slice(0, 2);
   const depCount = (bead.dependencies ?? []).filter((d) => d.type !== "parent-child").length;
   const commentCount = (bead.comments ?? []).length;
   const checklist = checklistProgress(bead.description);
 
   return (
-    <article
-      ref={setNodeRef}
-      data-board-bead={bead.id}
-      {...listeners}
-      {...attributes}
-      onClick={() => openDetail(bead.id)}
-      style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.4 : 1,
-        boxShadow: "var(--shadow)",
-        zIndex: isDragging ? 10 : undefined,
-      }}
-      className="flex cursor-pointer touch-none flex-col gap-[9px] rounded-[11px] border border-border bg-[var(--surface)] p-[12px_13px] transition-[border-color,box-shadow] hover:border-[var(--border-strong)] hover:shadow-[var(--shadow-lg)]"
-    >
+    <>
       <div className="flex items-center gap-2">
         <span
           className="h-2 w-2 flex-shrink-0 rounded-full"
@@ -66,7 +112,7 @@ export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: nu
         />
         <span className="flex-1" />
         <PriorityChip p={bead.priority} />
-        <OriginBadge origin={o} title={originTitle(bead.created_by, o)} />
+        <OriginBadge origin={origin} title={originTitle(bead.created_by, origin)} />
       </div>
 
       <div className="text-[13.5px] font-[550] leading-[1.35] tracking-[-.006em] text-[var(--text)] [text-wrap:pretty]">
@@ -169,9 +215,8 @@ export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: nu
             {childCount}
           </span>
         )}
-        <ChildProgressHint progress={childProgress} />
       </div>
-    </article>
+    </>
   );
 }
 
