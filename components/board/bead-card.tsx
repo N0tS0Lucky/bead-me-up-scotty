@@ -41,6 +41,7 @@ export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: nu
   return (
     <article
       ref={setNodeRef}
+      data-board-bead={bead.id}
       {...listeners}
       {...attributes}
       onClick={() => openDetail(bead.id)}

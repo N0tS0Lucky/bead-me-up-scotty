@@ -20,6 +20,7 @@ import { isBlocked, childrenCountMap } from "@/lib/beads-view";
 import { FilterBar } from "@/components/filter-bar";
 import { matchesFilters, labelOptionsFrom, assigneeOptionsFrom, epicOptionsFrom } from "@/lib/filters";
 import { BOARD_COLUMNS as COLUMNS, sortByOrder as sortCards } from "@/lib/board-columns";
+import { resolveDropTarget } from "@/lib/drop-target";
 import { Column } from "./column";
 import type { Bead } from "@/lib/schema";
 
@@ -111,7 +112,8 @@ export function Board() {
   // dnd-kit's collision resolution (closestCorners) misresolves cross-column
   // drops on some input pipelines (Wayland, fractional scaling — bead woi), so
   // `e.over` cannot be trusted for the drop target. Instead we resolve the
-  // target by geometric containment: which column rect contains the pointer.
+  // target by geometric containment: which column/card rect contains the
+  // pointer. Resolution logic lives in lib/drop-target.ts (pure, unit-tested).
   const pointerRef = React.useRef<{ x: number; y: number } | null>(null);
   const draggingRef = React.useRef(false);
   React.useEffect(() => {
@@ -123,25 +125,11 @@ export function Board() {
     return () => window.removeEventListener("pointermove", onMove, true);
   }, []);
 
-  // Resolve the column whose rect contains the pointer; ties go to the
-  // smallest containing rect (a card's column over the board background).
-  function columnAtPointer(): string | null {
-    const p = pointerRef.current;
-    if (!p) return null;
-    const els = document.querySelectorAll<HTMLElement>("[data-board-column]");
-    let hit: string | null = null;
-    let hitArea = Infinity;
-    for (const el of els) {
-      const r = el.getBoundingClientRect();
-      if (p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom) {
-        const area = r.width * r.height;
-        if (area < hitArea) {
-          hitArea = area;
-          hit = el.dataset.boardColumn ?? null;
-        }
-      }
-    }
-    return hit;
+  function collectRects(selector: string): { id: string; rect: DOMRect }[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(selector)).map((el) => ({
+      id: el.dataset.boardBead ?? el.dataset.boardColumn ?? "",
+      rect: el.getBoundingClientRect(),
+    })).filter((el) => el.id !== "");
   }
 
   function onDragStart() {
@@ -153,10 +141,21 @@ export function Board() {
     draggingRef.current = false;
     const activeId = String(e.active.id);
 
-    // Primary resolution: pointer containment against column rects.
-    // Falls back to e.over only if no pointer sample was ever seen.
-    const byPointer = columnAtPointer();
-    const overRaw = byPointer ?? (e.over?.id ? String(e.over.id) : null);
+    // Primary resolution: pointer containment against card/column rects.
+    // Fall back to e.over ONLY when no pointer sample was ever seen
+    // (synthetic event tests). A sample outside every rect is a no-op —
+    // it must NOT re-enter the closestCorners path.
+    const sample = pointerRef.current;
+    const resolution = resolveDropTarget(
+      sample,
+      collectRects("[data-board-bead]"),
+      collectRects("[data-board-column]"),
+    );
+    const overRaw: string | null =
+      resolution.kind === "no-sample" ? (e.over?.id ? String(e.over.id) : null)
+      : resolution.kind === "bead" ? resolution.id
+      : resolution.kind === "column" ? resolution.id
+      : null; // "outside" → no-op
     if (!overRaw) return;
 
     const activeCol = colOfBead.get(activeId);
@@ -176,10 +175,15 @@ export function Board() {
       return;
     }
 
-    // Within-column → reorder + persist the manual order.
+    // Within-column → reorder + persist the manual order. A bead-resolved
+    // target gives the precise position; a column-resolved target (empty
+    // area) moves to the end.
     const ids = (columns.find((c) => c.col.id === activeCol)?.cards ?? []).map((b) => b.id);
     const oldIndex = ids.indexOf(activeId);
-    const newIndex = overRaw === activeCol ? ids.length - 1 : ids.indexOf(overRaw);
+    const newIndex =
+      resolution.kind === "bead" && resolution.columnId === activeCol
+        ? ids.indexOf(resolution.id)
+        : ids.length - 1;
     if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
     setOrder.mutate({ columnId: activeCol, ids: arrayMove(ids, oldIndex, newIndex) });
   }
