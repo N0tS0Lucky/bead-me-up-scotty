@@ -1,7 +1,7 @@
 "use client";
 import * as React from "react";
 import { useSortable } from "@dnd-kit/sortable";
-import { DragOverlay, defaultDropAnimation } from "@dnd-kit/core";
+import { DragOverlay, defaultDropAnimationSideEffects, type DropAnimation } from "@dnd-kit/core";
 import type { Bead } from "@/lib/schema";
 import { Icon, typeIconName } from "@/components/icons";
 import { useApp } from "@/components/app-context";
@@ -63,7 +63,7 @@ export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: nu
         />
       </article>
       {isDragging && (
-        <DragOverlay dropAnimation={defaultDropAnimation}>
+        <DragOverlay dropAnimation={dropAnimation}>
           <div
             className="flex w-full cursor-grabbing flex-col gap-[9px] rounded-[11px] border border-[var(--border-strong)] bg-[var(--surface)] p-[12px_13px]"
             style={{ boxShadow: "var(--shadow-lg)" }}
@@ -226,6 +226,25 @@ function BeadCardContent({
     </>
   );
 }
+
+/**
+ * Drop animation for the DragOverlay. dnd-kit's default animates the overlay
+ * back to the source card's rect — correct for the transform pattern, where
+ * the source card has already slid into its new position. In our overlay
+ * pattern the card instead re-renders directly in the destination lane, so
+ * the default animation visibly snapped the overlay backwards to the source
+ * lane for a frame (Mark's 110% hands-on check, PR #2). Here the overlay
+ * simply fades out at the drop point while the real card appears in place.
+ */
+const dropAnimation: DropAnimation = {
+  duration: 150,
+  easing: "ease-out",
+  keyframes: ({ transform: { initial } }) => [
+    { transform: `translate(${initial.x}px, ${initial.y}px)`, opacity: 1 },
+    { transform: `translate(${initial.x}px, ${initial.y}px)`, opacity: 0 },
+  ],
+  sideEffects: defaultDropAnimationSideEffects({ styles: { active: { opacity: "0" } } }),
+};
 
 /** Closed ÷ children progress — hidden when the bead has no children. */
 export function ChildProgressHint({
