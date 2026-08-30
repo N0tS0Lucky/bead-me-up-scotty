@@ -53,6 +53,10 @@ function childEnv(id: AiProvider): NodeJS.ProcessEnv {
   if (env.ANTHROPIC_API_KEY && !env.ANTHROPIC_API_KEY.startsWith("sk-ant-")) {
     delete env.ANTHROPIC_API_KEY;
   }
+  if (id === "hermes") {
+    // Refine with AI is suggestion-only; keep tool access minimal (web only).
+    // `-Q` in argsFor already forces the answer-and-exit path even on a PTY.
+  }
   if (id === "opencode") {
     // Deny write/shell tools so `opencode run` cannot hang on a TTY prompt or
     // edit the repo. Refine with AI is suggestion-only.
@@ -63,6 +67,11 @@ function childEnv(id: AiProvider): NodeJS.ProcessEnv {
 
 function argsFor(id: AiProvider, prompt: string): string[] {
   switch (id) {
+    case "hermes":
+      // One-shot answer with minimal tooling (web only). `-Q` forces the
+      // answer-and-exit path regardless of TTY; the prompt must follow `-q` —
+      // bare positional args are rejected by the CLI.
+      return ["chat", "-Q", "-q", prompt, "-t", "web"];
     case "claude":
       return ["-p", prompt];
     case "cursor":

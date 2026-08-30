@@ -64,9 +64,12 @@ for AI agents.
   delete (`bd delete`, behind a confirm).
 - **Human-vs-agent attribution** — every bead and comment shows 👤 (human) or 🤖
   (agent), derived from a configurable human allowlist.
-- **Refine with AI** — pick OpenCode (default), Claude, Cursor CLI, or Codex in
-  the detail drawer or Settings; the app shells out to that local CLI for a
-  suggested description. Nothing is written until you confirm.
+- **Refine with AI** — pick Hermes (default), OpenCode, Claude, Cursor CLI, or
+  Codex in the detail drawer or Settings; the app shells out to that local CLI
+  for a suggested description. Nothing is written until you confirm. The Hermes
+  provider runs one-shot (`hermes chat -Q -q <prompt> -t web`); set
+  `HERMES_BIN` to a profile wrapper (e.g. `~/.local/bin/refiner`) to target a
+  dedicated Hermes profile.
 - **Settings** — repo path, human actor + allowlist, poll interval, AI provider,
   and light/dark theme. Live polling keeps the board fresh when agents change
   data underneath you.
@@ -151,8 +154,8 @@ Container limitations:
 - The image has no `git`, so Dolt remote sync (`refs/dolt/data`) and `bd init`
   don't work inside it — run those on the host. UI edits (create/update/close)
   work fine; they just won't auto-push until you sync from the host.
-- **Refine with AI** shells out to a local CLI (OpenCode by default; Claude,
-  Cursor CLI, and Codex are selectable), which isn't bundled; the button
+- **Refine with AI** shells out to a local CLI (Hermes, OpenCode, Claude,
+  Cursor CLI, or Codex — selectable), which isn't bundled; the button
   shows an error in the container unless that CLI is installed in the image.
 - The bundled `bd` version is pinned in the Dockerfile (`ARG BD_VERSION`);
   override with `--build-arg BD_VERSION=<version>` to match your host.

@@ -3,10 +3,10 @@
  * Keep this module free of `server-only` so the drawer and Settings can import it.
  */
 
-export const AI_PROVIDER_IDS = ["opencode", "claude", "cursor", "codex"] as const;
+export const AI_PROVIDER_IDS = ["hermes", "opencode", "claude", "cursor", "codex"] as const;
 export type AiProvider = (typeof AI_PROVIDER_IDS)[number];
 
-export const DEFAULT_AI_PROVIDER: AiProvider = "opencode";
+export const DEFAULT_AI_PROVIDER: AiProvider = "hermes";
 
 export const AI_PROVIDERS: {
   id: AiProvider;
@@ -14,6 +14,7 @@ export const AI_PROVIDERS: {
   binEnv: string;
   bin: string;
 }[] = [
+  { id: "hermes", label: "Hermes", binEnv: "HERMES_BIN", bin: "hermes" },
   { id: "opencode", label: "OpenCode", binEnv: "OPENCODE_BIN", bin: "opencode" },
   { id: "claude", label: "Claude", binEnv: "CLAUDE_BIN", bin: "claude" },
   { id: "cursor", label: "Cursor CLI", binEnv: "CURSOR_BIN", bin: "agent" },
