@@ -107,15 +107,62 @@ export function Board() {
     return m;
   }, [columns]);
 
+  // Last live pointer position, captured from raw pointermove during a drag.
+  // dnd-kit's collision resolution (closestCorners) misresolves cross-column
+  // drops on some input pipelines (Wayland, fractional scaling — bead woi), so
+  // `e.over` cannot be trusted for the drop target. Instead we resolve the
+  // target by geometric containment: which column rect contains the pointer.
+  const pointerRef = React.useRef<{ x: number; y: number } | null>(null);
+  const draggingRef = React.useRef(false);
+  React.useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      if (!draggingRef.current) return;
+      pointerRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener("pointermove", onMove, true);
+    return () => window.removeEventListener("pointermove", onMove, true);
+  }, []);
+
+  // Resolve the column whose rect contains the pointer; ties go to the
+  // smallest containing rect (a card's column over the board background).
+  function columnAtPointer(): string | null {
+    const p = pointerRef.current;
+    if (!p) return null;
+    const els = document.querySelectorAll<HTMLElement>("[data-board-column]");
+    let hit: string | null = null;
+    let hitArea = Infinity;
+    for (const el of els) {
+      const r = el.getBoundingClientRect();
+      if (p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom) {
+        const area = r.width * r.height;
+        if (area < hitArea) {
+          hitArea = area;
+          hit = el.dataset.boardColumn ?? null;
+        }
+      }
+    }
+    return hit;
+  }
+
+  function onDragStart() {
+    draggingRef.current = true;
+    pointerRef.current = null;
+  }
+
   function onDragEnd(e: DragEndEvent) {
+    draggingRef.current = false;
     const activeId = String(e.active.id);
-    const overRaw = e.over?.id ? String(e.over.id) : null;
+
+    // Primary resolution: pointer containment against column rects.
+    // Falls back to e.over only if no pointer sample was ever seen.
+    const byPointer = columnAtPointer();
+    const overRaw = byPointer ?? (e.over?.id ? String(e.over.id) : null);
     if (!overRaw) return;
 
     const activeCol = colOfBead.get(activeId);
     if (!activeCol) return;
 
-    // `over` is a column id (dropped on empty area) or a bead id (over a card).
+    // `overRaw` is a column id (dropped on empty area) or a bead id (over a card).
     const overCol = COLUMNS.some((c) => c.id === overRaw) ? overRaw : colOfBead.get(overRaw);
     if (!overCol) return;
 
@@ -172,7 +219,7 @@ export function Board() {
         {loading && beads.length === 0 ? (
           <div className="text-[13px] text-[var(--text-3)]">Loading beads…</div>
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd}>
             <div className="flex h-full min-h-0 gap-4">
               {shownColumns.map(({ col, cards }) => (
                 <Column

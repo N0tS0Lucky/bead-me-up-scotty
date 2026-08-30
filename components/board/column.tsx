@@ -42,6 +42,7 @@ export function Column({
 
       <div
         ref={setNodeRef}
+        data-board-column={col.id}
         className={cn(
           "bd-scroll flex min-h-0 flex-1 flex-col gap-[10px] overflow-y-auto overflow-x-hidden rounded-xl p-[4px_4px_14px] transition-[background,outline]",
           isOver && col.droppable
