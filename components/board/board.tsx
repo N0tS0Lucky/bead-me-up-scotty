@@ -20,6 +20,7 @@ import { isBlocked, childrenCountMap } from "@/lib/beads-view";
 import { FilterBar } from "@/components/filter-bar";
 import { matchesFilters, labelOptionsFrom, assigneeOptionsFrom, epicOptionsFrom } from "@/lib/filters";
 import { BOARD_COLUMNS as COLUMNS, sortByOrder as sortCards } from "@/lib/board-columns";
+import { resolveDropTarget } from "@/lib/drop-target";
 import { Column } from "./column";
 import type { Bead } from "@/lib/schema";
 
@@ -107,15 +108,60 @@ export function Board() {
     return m;
   }, [columns]);
 
+  // Last live pointer position, captured from raw pointermove during a drag.
+  // dnd-kit's collision resolution (closestCorners) misresolves cross-column
+  // drops on some input pipelines (Wayland, fractional scaling — bead woi), so
+  // `e.over` cannot be trusted for the drop target. Instead we resolve the
+  // target by geometric containment: which column/card rect contains the
+  // pointer. Resolution logic lives in lib/drop-target.ts (pure, unit-tested).
+  const pointerRef = React.useRef<{ x: number; y: number } | null>(null);
+  const draggingRef = React.useRef(false);
+  React.useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      if (!draggingRef.current) return;
+      pointerRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener("pointermove", onMove, true);
+    return () => window.removeEventListener("pointermove", onMove, true);
+  }, []);
+
+  function collectRects(selector: string): { id: string; rect: DOMRect }[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(selector)).map((el) => ({
+      id: el.dataset.boardBead ?? el.dataset.boardColumn ?? "",
+      rect: el.getBoundingClientRect(),
+    })).filter((el) => el.id !== "");
+  }
+
+  function onDragStart() {
+    draggingRef.current = true;
+    pointerRef.current = null;
+  }
+
   function onDragEnd(e: DragEndEvent) {
+    draggingRef.current = false;
     const activeId = String(e.active.id);
-    const overRaw = e.over?.id ? String(e.over.id) : null;
+
+    // Primary resolution: pointer containment against card/column rects.
+    // Fall back to e.over ONLY when no pointer sample was ever seen
+    // (synthetic event tests). A sample outside every rect is a no-op —
+    // it must NOT re-enter the closestCorners path.
+    const sample = pointerRef.current;
+    const resolution = resolveDropTarget(
+      sample,
+      collectRects("[data-board-bead]"),
+      collectRects("[data-board-column]"),
+    );
+    const overRaw: string | null =
+      resolution.kind === "no-sample" ? (e.over?.id ? String(e.over.id) : null)
+      : resolution.kind === "bead" ? resolution.id
+      : resolution.kind === "column" ? resolution.id
+      : null; // "outside" → no-op
     if (!overRaw) return;
 
     const activeCol = colOfBead.get(activeId);
     if (!activeCol) return;
 
-    // `over` is a column id (dropped on empty area) or a bead id (over a card).
+    // `overRaw` is a column id (dropped on empty area) or a bead id (over a card).
     const overCol = COLUMNS.some((c) => c.id === overRaw) ? overRaw : colOfBead.get(overRaw);
     if (!overCol) return;
 
@@ -129,10 +175,15 @@ export function Board() {
       return;
     }
 
-    // Within-column → reorder + persist the manual order.
+    // Within-column → reorder + persist the manual order. A bead-resolved
+    // target gives the precise position; a column-resolved target (empty
+    // area) moves to the end.
     const ids = (columns.find((c) => c.col.id === activeCol)?.cards ?? []).map((b) => b.id);
     const oldIndex = ids.indexOf(activeId);
-    const newIndex = overRaw === activeCol ? ids.length - 1 : ids.indexOf(overRaw);
+    const newIndex =
+      resolution.kind === "bead" && resolution.columnId === activeCol
+        ? ids.indexOf(resolution.id)
+        : ids.length - 1;
     if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return;
     setOrder.mutate({ columnId: activeCol, ids: arrayMove(ids, oldIndex, newIndex) });
   }
@@ -172,7 +223,7 @@ export function Board() {
         {loading && beads.length === 0 ? (
           <div className="text-[13px] text-[var(--text-3)]">Loading beads…</div>
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={onDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={closestCorners} onDragStart={onDragStart} onDragEnd={onDragEnd}>
             <div className="flex h-full min-h-0 gap-4">
               {shownColumns.map(({ col, cards }) => (
                 <Column
