@@ -19,11 +19,13 @@ import {
   isBlocked,
   parentOf,
   checklistProgress,
+  epicProgress,
   type ChildProgress,
 } from "@/lib/beads-view";
 
 export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: number }) {
-  const { index, humanAllowlist, openDetail } = useApp();
+  const { beads, index, humanAllowlist, openDetail } = useApp();
+  const childProgress = React.useMemo(() => epicProgress(bead.id, beads), [bead.id, beads]);
   const { attributes, listeners, setNodeRef, isDragging } = useSortable({
     id: bead.id,
   });
@@ -57,6 +59,7 @@ export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: nu
           origin={o}
           parent={parent}
           blocked={blocked}
+          childProgress={childProgress}
         />
       </article>
       {isDragging && (
@@ -71,6 +74,7 @@ export function BeadCard({ bead, childCount = 0 }: { bead: Bead; childCount?: nu
               origin={o}
               parent={parent}
               blocked={blocked}
+              childProgress={childProgress}
             />
           </div>
         </DragOverlay>
@@ -86,12 +90,14 @@ function BeadCardContent({
   origin,
   parent,
   blocked,
+  childProgress,
 }: {
   bead: Bead;
   childCount: number;
   origin: "human" | "agent";
   parent: Bead | null;
   blocked: boolean;
+  childProgress: ChildProgress;
 }) {
   const visLabels = (bead.labels ?? []).filter((l) => l !== "archived").slice(0, 2);
   const depCount = (bead.dependencies ?? []).filter((d) => d.type !== "parent-child").length;
@@ -215,6 +221,7 @@ function BeadCardContent({
             {childCount}
           </span>
         )}
+        <ChildProgressHint progress={childProgress} />
       </div>
     </>
   );
